@@ -154,3 +154,35 @@ def test_images_are_sent_as_image_blocks() -> None:
     client = AnthropicModelClient(client=SimpleNamespace(messages=messages))  # type: ignore[arg-type]  # SDK stand-in
     extract(client, Document(DocumentKind.PROOF_OF_ADDRESS, "image/png", b"\x89PNG\r\n\x1a\n"))
     assert messages.kwargs["messages"][0]["content"][0]["type"] == "image"
+
+
+def test_the_real_sdk_sends_the_request_and_replays_its_own_blocks_on_a_retry() -> None:
+    """The stand-ins above accept any keyword. This goes through the installed SDK, so a parameter it does not know,
+    or content blocks it cannot send back, fail here instead of on the first live run."""
+    bodies: list[dict[str, Any]] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        text = "not json" if len(bodies) == 1 else reply()
+        message = {
+            "id": f"msg_{len(bodies)}",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-5-5",
+            "content": [{"type": "text", "text": text}],
+            "stop_reason": "end_turn",
+            "stop_sequence": None,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+        return httpx2.Response(200, json=message)
+
+    sdk = anthropic.Anthropic(api_key="test-key", http_client=httpx2.Client(transport=httpx2.MockTransport(answer)))
+    result = extract(AnthropicModelClient(model="claude-sonnet-5-5", client=sdk), PDF)
+    assert result.ok
+    assert result.attempts == 2
+    first, retry = bodies
+    assert set(first) == {"model", "max_tokens", "system", "messages", "output_config"}
+    assert first["output_config"]["format"]["type"] == "json_schema"
+    assert first["messages"][0]["content"][0]["type"] == "document"
+    assert [m["role"] for m in retry["messages"]] == ["user", "assistant", "user"]
+    assert retry["messages"][1]["content"] == [{"type": "text", "text": "not json"}]
