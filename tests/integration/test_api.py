@@ -277,14 +277,21 @@ def test_the_audit_log_cannot_be_rewritten_or_deleted(store: Store) -> None:
             conn.execute("UPDATE audit_events SET actor = 'someone else' WHERE case_id = ?", (case_id,))
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             conn.execute("DELETE FROM audit_events WHERE case_id = ?", (case_id,))
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            # REPLACE deletes the old row without firing delete triggers, so it needs its own guard.
+            conn.execute(
+                "INSERT OR REPLACE INTO audit_events (seq, case_id, at, actor, event, detail)"
+                " SELECT seq, case_id, at, 'someone else', event, detail FROM audit_events WHERE case_id = ?",
+                (case_id,),
+            )
         with pytest.raises(sqlite3.IntegrityError, match="never deleted"):
             conn.execute("DELETE FROM cases WHERE id = ?", (case_id,))
     conn.close()
 
 
 def test_migrations_are_idempotent(store: Store) -> None:
-    assert store.migrate() == 1
-    assert store.migrate() == 1
+    assert store.migrate() == 2
+    assert store.migrate() == 2
 
 
 def test_an_interrupted_case_moves_to_review_with_an_audit_event(store: Store) -> None:

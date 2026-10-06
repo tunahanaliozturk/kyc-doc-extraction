@@ -13,9 +13,10 @@ machine. The house default for a service is Postgres with asyncpg.
 We use SQLite through the standard library's `sqlite3`, one connection per unit of work, parameterised SQL only.
 Migrations are numbered `.sql` files in `src/kyc/migrations/`, applied in order and tracked in
 `PRAGMA user_version`; each runs in one transaction with its version bump. Append-only is enforced by triggers:
-`UPDATE` or `DELETE` on `audit_events`, and `DELETE` on `cases`, abort with an error. Every state change writes its
-audit event in the same transaction. Reviewer decisions use `BEGIN IMMEDIATE` plus an `UPDATE ... WHERE version = ?
-AND status = 'in_review'`, and the API requires the version back in `If-Match`.
+`UPDATE`, `DELETE` or an `INSERT OR REPLACE` onto an existing row of `audit_events`, and `DELETE` on `cases`, abort
+with an error. Every state change writes its audit event in the same transaction. Reviewer decisions use
+`BEGIN IMMEDIATE` plus an `UPDATE ... WHERE version = ? AND status = 'in_review'`, and the API requires the version
+back in `If-Match`.
 
 ## Consequences
 
