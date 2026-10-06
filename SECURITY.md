@@ -12,11 +12,12 @@ Designed in:
 
 - **Decisions do not come from the model.** Text inside a document cannot approve a case; at worst it makes the
   model report false values, which the checks and the text-layer grounding catch (ADR 0001, ADR 0007).
-- **Audit trail is append-only in the database.** Triggers abort any `UPDATE` or `DELETE` on `audit_events`.
+- **Audit trail is append-only in the database.** Triggers abort any `UPDATE`, `DELETE` or `INSERT OR REPLACE` on
+  an existing row of `audit_events`.
 - **Identity comes from the credential.** The reviewer name is taken from the bearer token, never from the body.
   Tokens are compared with `hmac.compare_digest` against every configured token.
 - **Uploads are checked** for valid base64, a 10 MiB cap per document, at most six documents, and the file's magic
-  bytes matching the declared type.
+  bytes matching the declared type. The whole request body is capped (413) before FastAPI reads and parses it.
 - **Parameterised SQL everywhere.** No string-built queries.
 - **Loopback by default.** The API binds 127.0.0.1 unless told otherwise.
 - **No real personal data.** Every document is a generated SPECIMEN with an invented name.
