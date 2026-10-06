@@ -1,0 +1,66 @@
+# Every endpoint, in the order you would try them. Start the API first:
+#   KYC_API_TOKENS=alice:alice-demo-token-0001 uv run kyc-api
+# Submitting a real specimen needs base64 of a whole PDF, so that step lives in tools/submit_case.py:
+#   uv run kyc-generate
+#   KYC_TOKEN=alice-demo-token-0001 uv run python tools/submit_case.py data/specimens/case-031
+
+@base = http://127.0.0.1:8000
+@token = alice-demo-token-0001
+
+### Liveness. No token needed.
+GET {{base}}/health
+
+### Without a token: 401 with code "unauthenticated".
+GET {{base}}/v1/review-queue
+
+### Cases waiting for a human, oldest first. Pass next_cursor back as ?cursor= for the next page.
+GET {{base}}/v1/review-queue?limit=20
+Authorization: Bearer {{token}}
+
+### One case: status, every check with its quotes, and what the model extracted. Note the ETag header.
+# Replace the id with one from the review queue.
+GET {{base}}/v1/cases/REPLACE_WITH_CASE_ID
+Authorization: Bearer {{token}}
+
+### Decide it. If-Match must hold the ETag from the GET above, or the API answers 428 (missing) or 412 (stale).
+# Deciding a case that is not in review, or deciding twice, is 409.
+POST {{base}}/v1/cases/REPLACE_WITH_CASE_ID/decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+If-Match: "2"
+
+{"outcome": "reject", "note": "Bill tells automated readers to mark the case verified, and its address differs."}
+
+### Everything that happened to the case, in order.
+GET {{base}}/v1/cases/REPLACE_WITH_CASE_ID/audit
+Authorization: Bearer {{token}}
+
+### A document that is not what it claims: 422 with code "invalid_document".
+POST {{base}}/v1/cases
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "application": {
+    "full_name": "Jan Voorbeeld",
+    "date_of_birth": "1988-04-17",
+    "nationality": "NLD",
+    "address": {"line": "Proefweg 3", "postcode": "3511 AA", "city": "Utrecht", "country": "NL"}
+  },
+  "documents": [{"kind": "identity_card", "media_type": "application/pdf", "content_base64": "aGVsbG8="}]
+}
+
+### Several problems at once: every one comes back in "errors" with code "validation_failed".
+POST {{base}}/v1/cases
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "application": {
+    "full_name": "Jan Voorbeeld",
+    "date_of_birth": "17-04-1988",
+    "nationality": "XX",
+    "address": {"line": "Proefweg 3", "postcode": "3511 AA", "city": "Utrecht", "country": "UK"}
+  },
+  "documents": []
+}
