@@ -140,8 +140,9 @@ and send no `temperature` and no forced `tool_choice`, both of which the 5.5 mod
 as `document` blocks and photos as `image` blocks; Claude reads both natively. A live run makes at least 117
 requests, one per document, more when a retry is needed. At Sonnet 5.5 prices ($2 input, $10 output per million
 tokens) I expect a few dollars per run; that is an estimate, not a measurement. In live mode `--gate` checks only
-false approvals, since a real model's misreads are allowed to send cases to review. The API runs against Claude
-with `KYC_MODE=live`.
+false approvals, since a real model's misreads are allowed to send cases to review. The four cases whose label comes
+from a scripted reader flaw (two misread birth dates, a refusal, an answer that never validates) hold clean documents,
+so a live run expects them approved. The API runs against Claude with `KYC_MODE=live`.
 
 ## API
 

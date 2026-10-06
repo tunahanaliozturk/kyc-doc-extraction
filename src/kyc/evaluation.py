@@ -76,13 +76,15 @@ class Report:
         return f"{n / self.cases:.1%}" if self.cases else "n/a"
 
 
-def evaluate(cases: list[SpecimenCase], client: ModelClient, mode: str) -> Report:
+def evaluate(cases: list[SpecimenCase], client: ModelClient, mode: str, *, live: bool = False) -> Report:
+    """`live` scores against what a correct reader would get: the scripted misread, refusal and never-valid answer
+    are flaws of the stand-in reader, and the documents behind them are clean."""
     report = Report(mode=mode)
     started = time.perf_counter()
     for case in cases:
         docs = [Document(d.kind, d.media_type, d.content) for d in case.documents]
         result = process(case.application, docs, client, REFERENCE_DATE)
-        got, want = result.decision.outcome, case.expected
+        got, want = result.decision.outcome, case.expected_for(live=live)
         label = f"{case.case_id} ({case.scenario})"
         report.cases += 1
         report.documents += len(docs)
@@ -170,7 +172,7 @@ def main() -> None:
         client, mode = live, f"live ({live.model})"
     else:
         client, mode = ReplayClient(replies_by_hash(cases)), "offline replay (scripted replies, not a model)"
-    report = evaluate(cases, client, mode)
+    report = evaluate(cases, client, mode, live=args.live)
     text = to_markdown(report)
     sys.stdout.write(text)
     if args.markdown:

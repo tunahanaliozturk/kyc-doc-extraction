@@ -96,6 +96,12 @@ class SpecimenCase:
     expected: Outcome
     note: str
     hard: bool = field(default=False)  # a deliberately difficult case, reported separately
+    # What a correct reader gets, when `expected` comes from a scripted reader flaw and not from the documents. A
+    # live run scores against this: a real model that reads a clean document correctly has not made a false approval.
+    expected_live: Outcome | None = None
+
+    def expected_for(self, *, live: bool) -> Outcome:
+        return (self.expected_live or self.expected) if live else self.expected
 
 
 # --- printing helpers -------------------------------------------------------------------------------------------
@@ -421,9 +427,10 @@ class Builder:
         note: str,
         *,
         hard: bool = False,
+        expected_live: Outcome | None = None,
     ) -> None:
         case_id = f"case-{len(self.cases) + 1:03d}"
-        self.cases.append(SpecimenCase(case_id, scenario, app, docs, expected, note, hard))
+        self.cases.append(SpecimenCase(case_id, scenario, app, docs, expected, note, hard, expected_live))
 
     # Scenarios. Each adds one case; the counts are set in generate().
 
@@ -600,6 +607,7 @@ class Builder:
             Outcome.IN_REVIEW,
             "reader gets one digit of the birth date wrong",
             hard=True,
+            expected_live=Outcome.APPROVED,
         )
 
     def minor(self) -> None:
@@ -657,6 +665,7 @@ class Builder:
             Outcome.IN_REVIEW,
             "every answer is invalid; the case must not pass on a guess",
             hard=True,
+            expected_live=Outcome.APPROVED,
         )
 
     def refused(self) -> None:
@@ -667,7 +676,13 @@ class Builder:
         doc.replies = [REFUSAL]
         poa = proof_of_address(app.full_name, app.address, self.issued())
         self.add(
-            "model_refuses", app, [doc, poa], Outcome.IN_REVIEW, "the model declines to read the document", hard=True
+            "model_refuses",
+            app,
+            [doc, poa],
+            Outcome.IN_REVIEW,
+            "the model declines to read the document",
+            hard=True,
+            expected_live=Outcome.APPROVED,
         )
 
     def missing_document(self) -> None:

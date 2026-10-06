@@ -2,16 +2,19 @@
 
 import hashlib
 import io
+import json
 from collections import Counter
+from datetime import date
 
 import pytest
 from PIL import Image
 from pypdf import PdfReader
 
 from kyc.evaluation import Report, evaluate, normalise
-from kyc.generator import PEOPLE, generate, replies_by_hash
+from kyc.generator import PEOPLE, SpecimenDocument, generate, replies_by_hash
 from kyc.replay import ReplayClient
 from kyc.routing import Outcome
+from kyc.schemas import IDENTITY_KINDS
 
 CASES = generate()
 
@@ -82,6 +85,22 @@ def test_the_offline_eval_matches_every_expected_decision(offline_report: Report
 
 def test_the_retry_cases_needed_exactly_one_retry(offline_report: Report) -> None:
     assert offline_report.retried_documents == 4 + 1  # four scripted retries and the always-invalid document
+
+
+def test_a_live_run_with_a_reader_that_never_errs_matches_every_decision() -> None:
+    """The scripted misread, refusal and never-valid answer are flaws of the stand-in reader, not of the documents.
+    A live model that reads those documents correctly must not be scored as a false approval."""
+
+    def correct(doc: SpecimenDocument) -> str:
+        if doc.kind not in IDENTITY_KINDS:
+            return doc.replies[-1]
+        quote = {k: date.fromisoformat(v).strftime("%d.%m.%Y") for k, v in doc.truth.items() if k.startswith("date_")}
+        return json.dumps({k: {"value": v, "quote": quote.get(k, v)} for k, v in doc.truth.items()})
+
+    replies = {hashlib.sha256(d.content).hexdigest(): [correct(d)] for c in CASES for d in c.documents}
+    report = evaluate(CASES, ReplayClient(replies), "live stand-in", live=True)
+    assert report.false_approvals == []
+    assert report.mismatches == []
 
 
 def test_normalised_comparison() -> None:
