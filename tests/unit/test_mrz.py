@@ -94,5 +94,6 @@ def test_birth_dates_take_the_last_century_that_is_not_in_the_future() -> None:
     today = date(2026, 10, 1)
     assert mrz.yymmdd_to_date("740812", today=today, future=False) == date(1974, 8, 12)
     assert mrz.yymmdd_to_date("100101", today=today, future=False) == date(2010, 1, 1)
+    assert mrz.yymmdd_to_date("261215", today=today, future=False) == date(1926, 12, 15)  # later this year
     assert mrz.yymmdd_to_date("310831", today=today, future=True) == date(2031, 8, 31)
     assert mrz.yymmdd_to_date("991399", today=today, future=False) is None

@@ -148,11 +148,13 @@ def yymmdd_to_date(raw: str, *, today: date, future: bool) -> date | None:
     if not raw.isdigit():
         return None
     yy, mm, dd = int(raw[0:2]), int(raw[2:4]), int(raw[4:6])
-    century = 2000 if future or 2000 + yy <= today.year else 1900
     try:
-        return date(century + yy, mm, dd)
+        parsed = date(2000 + yy, mm, dd)
+        if not future and parsed > today:  # the date, not only the year: 261215 is 1926 when today is 2026-10-01
+            parsed = date(1900 + yy, mm, dd)
     except ValueError:
         return None
+    return parsed
 
 
 def _pad(value: str, length: int) -> str:
