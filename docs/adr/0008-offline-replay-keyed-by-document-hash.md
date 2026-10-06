@@ -1,4 +1,4 @@
-# 0008. Offline replay keyed by document hash, and specimens that are byte-identical on every platform
+# 0008. Offline replay keyed by document hash, and PDF specimens that are byte-identical on every platform
 
 Status: Accepted, 2026-10-06
 
@@ -18,7 +18,14 @@ reader that obeys an injected instruction.
 Because the key is a hash, a specimen generated on Windows must have the same bytes as one generated in the Linux
 container. It did not at first: CPython on Windows links zlib-ng, Linux links zlib, and the same stream compresses
 to different bytes. The generator now writes uncompressed PDFs (`pageCompression=0`, `invariant=1`) and PNGs with
-`compress_level=0`. A test pins the digest of the whole set.
+`compress_level=0`.
+
+That fixed the PDFs but not the photos. On a GitHub runner the 112 PDFs matched the laptop byte for byte, while all
+5 PNGs differed. The PNG framing was identical; the decoded pixels were not, even for photos with no blur, so the
+difference is in how Pillow and FreeType rasterise text on that CPU. Windows and a Linux container on the same
+laptop agree, so the API's offline mode works when the specimens and the container come from one machine. A test
+pins the digest of the PDFs only, and a second test checks that photos are identical across two runs on one
+machine. Photos always go to human review anyway, because they have no text layer to check quotes against.
 
 ## Consequences
 

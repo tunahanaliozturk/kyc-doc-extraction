@@ -24,12 +24,21 @@ def test_the_set_is_deterministic_for_a_seed() -> None:
     assert [d.content for c in again for d in c.documents] == [d.content for c in CASES for d in c.documents]
 
 
-def test_the_set_has_the_same_bytes_on_every_platform() -> None:
+def test_the_pdfs_have_the_same_bytes_on_every_platform() -> None:
     # The replay client and the API's offline mode find scripted answers by document hash, so a specimen generated
     # on Windows must hash the same as one generated in the Linux container. Compression is off for that reason.
-    # This digest changes when reportlab or Pillow change their output; regenerate it then, on any platform.
-    digest = hashlib.sha256(b"".join(d.content for c in CASES for d in c.documents)).hexdigest()
-    assert digest[:16] == "ea950e4c05d860f2"
+    # Photos are left out: Pillow's text rendering gives different pixels on different CPUs (see ADR 0008).
+    # This digest changes when reportlab changes its output; regenerate it then, on any platform.
+    pdfs = [d.content for c in CASES for d in c.documents if d.content.startswith(b"%PDF")]
+    assert len(pdfs) == 112
+    assert hashlib.sha256(b"".join(pdfs)).hexdigest()[:16] == "7f7bb9e94750b20a"
+
+
+def test_photos_are_deterministic_on_one_machine() -> None:
+    photos = [d.content for c in CASES for d in c.documents if d.content.startswith(b"\x89PNG")]
+    again = [d.content for c in generate() for d in c.documents if d.content.startswith(b"\x89PNG")]
+    assert len(photos) == 5
+    assert photos == again
 
 
 def test_the_set_has_the_promised_size_and_mix() -> None:
