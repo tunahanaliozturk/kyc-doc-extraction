@@ -162,6 +162,7 @@ Errors are `application/problem+json` with a stable `code`:
 | 404 | `case_not_found` | Check the id. |
 | 409 | `case_not_in_review` | Someone already decided, or the case was decided automatically. Reload it. |
 | 412 | `version_mismatch` | The case changed since you read it. GET it again, then decide. |
+| 413 | `payload_too_large` | The body is over six documents at 10 MiB each; send fewer or smaller files. |
 | 422 | `validation_failed` | Fix every field listed in `errors`; they all come back at once. |
 | 422 | `invalid_document`, `invalid_cursor` | The file is not the type it claims, or the cursor was edited. |
 | 428 | `if_match_required` | Send the `ETag` from your last GET in `If-Match`. |

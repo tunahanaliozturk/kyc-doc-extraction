@@ -20,11 +20,12 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, Query, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from kyc import generator
 from kyc.extraction import AnthropicModelClient, Document, ModelClient
@@ -39,6 +40,7 @@ log = logging.getLogger(__name__)
 MAX_DOCUMENTS = 6
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_PAGE = 100
+MAX_BODY_BYTES = MAX_DOCUMENTS * (MAX_DOCUMENT_BYTES * 4 // 3 + 4) + 1024 * 1024  # every document at its limit
 _MAGIC = {"application/pdf": b"%PDF-", "image/png": b"\x89PNG\r\n\x1a\n", "image/jpeg": b"\xff\xd8\xff"}
 
 
@@ -186,6 +188,30 @@ def _parse_if_match(value: str | None) -> int:
 # --- the app ----------------------------------------------------------------------------------------------------
 
 
+class BodyLimit:
+    """Refuse a body over MAX_BODY_BYTES as it arrives. The field limits only run after FastAPI has read and parsed
+    the whole body, which is too late for a 2 GB upload."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        declared = dict(scope.get("headers", [])).get(b"content-length", b"")
+        received = 0
+
+        async def limited() -> Message:
+            nonlocal received
+            if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+                raise HTTPException(413, f"the request body is over {MAX_BODY_BYTES} bytes")
+            message = await receive()
+            received += len(message.get("body", b""))
+            if received > MAX_BODY_BYTES:  # no Content-Length, or one that lied
+                raise HTTPException(413, f"the request body is over {MAX_BODY_BYTES} bytes")
+            return message
+
+        await self.app(scope, limited if scope["type"] == "http" else receive, send)
+
+
 def _api_error(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)  # noqa: S101  # registered for ApiError only
     body = _problem(exc.status, exc.code, exc.detail)
@@ -201,7 +227,7 @@ def _invalid_request(_: Request, exc: Exception) -> JSONResponse:
 
 def _http_error(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, StarletteHTTPException)  # noqa: S101  # registered for HTTPException only
-    code = {404: "not_found", 405: "method_not_allowed"}.get(exc.status_code, "http_error")
+    code = {404: "not_found", 405: "method_not_allowed", 413: "payload_too_large"}.get(exc.status_code, "http_error")
     body = _problem(exc.status_code, code, str(exc.detail))
     return JSONResponse(body, exc.status_code, media_type="application/problem+json")
 
@@ -228,6 +254,7 @@ def create_app(store: Store, client: ModelClient, today: Callable[[], date], tok
     """`tokens` maps bearer token to reviewer name. With no tokens every authenticated call is refused."""
     app = FastAPI(title="KYC document extraction", version="0.1.0")
     app.state.tokens = tokens
+    app.add_middleware(BodyLimit)
     app.add_exception_handler(ApiError, _api_error)
     app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_exception_handler(StarletteHTTPException, _http_error)

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from kyc import api as api_module
 from kyc.api import create_app, parse_tokens
 from kyc.generator import REFERENCE_DATE, SpecimenCase, generate, replies_by_hash
 from kyc.replay import ReplayClient
@@ -203,6 +204,18 @@ def test_a_document_that_is_not_what_it_claims_is_422(api: TestClient, content: 
     response = api.post("/v1/cases", json=body, headers=auth())
     assert response.status_code == 422
     assert response.json()["code"] == "invalid_document"
+
+
+@pytest.mark.parametrize("chunked", [False, True])
+def test_a_body_over_the_limit_is_refused_before_it_is_parsed(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch, chunked: bool
+) -> None:
+    monkeypatch.setattr(api_module, "MAX_BODY_BYTES", 1000)
+    body = b'{"documents": "' + b"A" * 5000 + b'"}'
+    content: Any = iter([body[:2500], body[2500:]]) if chunked else body
+    response = api.post("/v1/cases", content=content, headers={**auth(), "Content-Type": "application/json"})
+    assert response.status_code == 413
+    assert response.json()["code"] == "payload_too_large"
 
 
 def test_a_malformed_cursor_is_422(api: TestClient) -> None:
