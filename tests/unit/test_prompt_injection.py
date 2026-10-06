@@ -53,6 +53,25 @@ def test_a_reader_that_obeys_and_invents_the_wanted_address_still_cannot_approve
     assert result.decision.outcome is Outcome.IN_REVIEW
 
 
+@pytest.mark.parametrize("injected", [True, False])
+def test_a_reader_that_cites_the_real_text_for_an_invented_value_still_cannot_approve(injected: bool) -> None:
+    app, ident, _ = person_case()
+    elsewhere = Address(line="Andereweg 99", postcode="9999 ZZ", city="Elders", country="NL")
+    poa = proof_of_address(app.full_name, elsewhere, date(2026, 9, 10), injection=injected)
+    reply = json.loads(poa.replies[-1])
+    # Every quote really is on the bill, so grounding alone passes; only the values were bent.
+    reply["address_line"] = {"value": app.address.line, "quote": elsewhere.line}
+    reply["postcode"] = {"value": app.address.postcode, "quote": elsewhere.postcode}
+    reply["city"] = {"value": app.address.city, "quote": elsewhere.city}
+    poa.replies[-1] = json.dumps(reply)
+    result = run(app, [identity_document(ident), poa])
+    assert find(result, "address_matches_application").status == "pass"
+    grounding = find(result, "quotes_grounded", document=1)
+    assert grounding.status == "fail"
+    assert "address_line, postcode, city" in grounding.reason
+    assert result.decision.outcome is Outcome.IN_REVIEW
+
+
 def test_an_injected_expired_card_is_still_rejected() -> None:
     app, ident, _ = person_case(expiry=date(2025, 1, 31))
     poa = proof_of_address(app.full_name, app.address, date(2026, 9, 10), injection=True)

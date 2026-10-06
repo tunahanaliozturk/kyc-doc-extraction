@@ -122,28 +122,68 @@ def _all_fields(value: BaseModel) -> list[tuple[str, Extracted]]:
     return found
 
 
+# Fields the reader writes as a code ("NL" for "Netherlands"), so the quote may look nothing like the value. Each one
+# is also compared with the MRZ or the application, which the reader cannot bend at the same time.
+_CODED_FIELDS = {"nationality", "issuing_country", "country", "sex"}
+_DATE_FIELDS = {"date_of_birth", "date_of_expiry", "issue_date"}
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+
+def supported(name: str, field: Extracted) -> bool:
+    """Does the quote say what the value says? Grounding proves the quote is on the page; this proves the value came
+    from it. Without it a reader could pair a real quote with the value the applicant wanted."""
+    if field.value is None or not field.quote or name in _CODED_FIELDS:
+        return True
+    quote = normalise_address(field.quote).split()
+    if name in _DATE_FIELDS:
+        return _date_in(date.fromisoformat(field.value), quote)
+    return f" {normalise_address(field.value)} " in f" {' '.join(quote)} "
+
+
+def _date_in(value: date, tokens: list[str]) -> bool:
+    """The quote writes this date day, month, year (month as a number or an English name) or year, month, day. Day
+    and month swapped does not count: that is how a stale bill would be read as a recent one."""
+    month = _MONTHS[value.month - 1]
+    kept = [t for t in tokens if t.isdigit() or t[:3] in _MONTHS]  # "17 APR/AVR 1988" keeps 17, apr, 1988
+
+    def number(token: str, n: int) -> bool:
+        return token.isdigit() and int(token) == n
+
+    def year(token: str) -> bool:
+        return number(token, value.year) or (len(token) == 2 and number(token, value.year % 100))
+
+    return any(
+        (number(a, value.day) and (number(b, value.month) or b[:3] == month) and year(c))
+        or (year(a) and number(b, value.month) and number(c, value.day))
+        for a, b, c in zip(kept, kept[1:], kept[2:], strict=False)
+    )
+
+
 def check_grounding(e: Evidence) -> Check:
     if e.extraction.value is None:
         return Check(name="quotes_grounded", status="unknown", reason="nothing was extracted", document=e.index)
-    if e.text_layer is None:
+    fields = _all_fields(e.extraction.value)
+    unsupported = [(name, f.quote) for name, f in fields if not supported(name, f)]
+    if e.text_layer is None and not unsupported:
         return Check(
             name="quotes_grounded",
             status="unknown",
             reason="the document has no text layer, so a reviewer compares the quotes with the image",
             document=e.index,
         )
-    missing = [
-        (name, f.quote)
-        for name, f in _all_fields(e.extraction.value)
-        if f.quote and not grounded(f.quote, e.text_layer)
-    ]
-    if missing:
+    missing = [(name, f.quote) for name, f in fields if f.quote and grounded(f.quote, e.text_layer) is False]
+    if missing or unsupported:
+        reasons = []
+        if missing:
+            reasons.append("quotes not found on the document: " + ", ".join(n for n, _ in missing))
+        if unsupported:
+            reasons.append("values their quotes do not say: " + ", ".join(n for n, _ in unsupported))
         return Check(
             name="quotes_grounded",
             status="fail",
-            reason="quotes not found on the document: " + ", ".join(n for n, _ in missing),
+            reason="; ".join(reasons),
             document=e.index,
-            quotes=[q for _, q in missing if q],
+            quotes=list(dict.fromkeys(q for _, q in missing + unsupported if q)),
         )
     return Check(
         name="quotes_grounded", status="pass", reason="every quote appears in the text layer", document=e.index

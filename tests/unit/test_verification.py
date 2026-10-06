@@ -3,10 +3,12 @@
 import json
 from datetime import date
 
+import pytest
+
 from kyc.generator import identity_document, misread, proof_of_address
 from kyc.routing import Outcome
-from kyc.schemas import Address, DocumentKind
-from kyc.verification import grounded, normalise_address
+from kyc.schemas import Address, DocumentKind, Extracted
+from kyc.verification import grounded, normalise_address, supported
 from tests.helpers import find, person_case, run, status
 
 
@@ -125,6 +127,24 @@ def test_grounding_ignores_spacing_and_case_but_not_content() -> None:
     assert grounded("Jan Voorbeeld", page) is True
     assert grounded("Jan Vorbeeld", page) is False
     assert grounded("Jan Voorbeeld", None) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "quote", "expected"),
+    [
+        ("holder_name", "Ayşe Örnekoğlu", "Customer: AYŞE ÖRNEKOĞLU", True),
+        ("holder_name", "Erika Mustermann", "Pieter Anders", False),
+        ("postcode", "1012 AB", "1012 AB Amsterdam", True),
+        ("address_line", "Proefweg 3", "Proefweg 31", False),
+        ("issue_date", "2026-09-10", "10.09.2026", True),
+        ("date_of_birth", "1988-04-17", "17 APR/AVR 88", True),
+        ("issue_date", "2026-09-05", "09.05.2026", False),  # a May bill read as a September one
+        ("issue_date", "2026-09-10", "10.09.2025", False),
+        ("country", "NL", "Netherlands", True),
+    ],
+)
+def test_a_value_must_be_what_its_quote_says(name: str, value: str, quote: str, expected: bool) -> None:
+    assert supported(name, Extracted(value=value, quote=quote)) is expected
 
 
 def test_address_normalisation() -> None:
