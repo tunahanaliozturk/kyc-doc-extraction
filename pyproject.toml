@@ -1,0 +1,82 @@
+[project]
+name = "kyc-doc-extraction"
+version = "0.1.0"
+description = "KYC document extraction with Claude where every field is verified by code, doubtful cases go to a human, and accuracy is measured per field"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Tunahan Ali Ozturk" }]
+requires-python = ">=3.14"
+dependencies = [
+    "anthropic>=1.11.0",
+    "fastapi>=0.142.2",
+    "pillow>=12.3.0",
+    "pydantic>=2.13.5",
+    "pypdf>=6.19.0",
+    "reportlab>=5.0.1",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+kyc-generate = "kyc.generator:main"
+kyc-eval = "kyc.evaluation:main"
+kyc-api = "kyc.api:main"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kyc"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH", "ARG", "PL", "RUF", "S", "DTZ", "T20"]
+ignore = [
+    "PLR0913", # the check functions take the documents they compare explicitly
+    "PLR2004", # check digits, ages and day counts are domain constants that read better inline
+    "N818",    # exceptions are named for what happened (CaseNotFound, VersionMismatch), not suffixed with Error
+    "RUF001",  # Turkish and Danish letters in strings are the point of the name and address tests
+    "RUF003",  # and in the comments that explain them
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kyc", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR0915", "ARG"]
+"tools/**" = ["T20", "S105"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Header", "fastapi.Query"]
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+mypy_path = "src"
+packages = ["kyc"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["reportlab.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["--strict-markers", "-ra"]
+xfail_strict = true
+filterwarnings = ["error"]
