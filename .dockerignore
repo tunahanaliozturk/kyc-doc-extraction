@@ -1,0 +1,13 @@
+.venv
+.git
+.github
+.mypy_cache
+.ruff_cache
+.pytest_cache
+data
+uploads
+tests
+docs
+tools
+*.sqlite3*
+.env*

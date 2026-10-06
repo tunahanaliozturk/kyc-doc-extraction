@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: lint, format, types, licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src tests
+      - run: uv run python tools/license_audit.py
+
+  tests:
+    name: unit and API tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --locked
+      - run: uv run pytest tests/unit -q
+      - run: uv run pytest tests/integration -q
+
+  eval:
+    name: offline eval gate (scripted replies, zero false approvals)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync --locked
+      - run: uv run kyc-eval --gate
+
+  vulnerabilities:
+    name: known vulnerabilities in dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv export --locked --no-dev --no-emit-project --format requirements-txt -o requirements.txt
+      - run: uvx pip-audit --requirement requirements.txt --disable-pip --no-deps --strict
+
+  image:
+    name: container builds, runs as non-root and turns healthy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: docker build --tag kyc-doc-extraction:ci .
+      - run: docker run --detach --name kyc --publish 127.0.0.1:8000:8000 kyc-doc-extraction:ci
+      - name: wait for the health check
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' kyc)
+            [ "$status" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs kyc
+          exit 1
+      - run: test "$(docker exec kyc id -u)" = 10001
